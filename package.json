@@ -1,0 +1,19 @@
+{
+  "name": "d365.nodeapp",
+  "version": "1.0.0",
+  "description": "A \"Console Application\" in NodeJS for D365",
+  "main": "entrypoint.js",
+  "scripts": {
+    "start": "node entrypoint.js"
+  },
+  "author": "Marius Solend",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "12.7.5"
+  },
+  "dependencies": {
+    "adal-node": "0.2.1",
+    "find-config": "1.0.0",
+    "superagent": "5.1.0"
+  }
+}
