@@ -1,3 +1,2 @@
-/node_modules
-/webresources
-/d365configuration
+node_modules/
+clientConfig.json

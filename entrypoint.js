@@ -1,3 +1,4 @@
-const D365 = require("./d365");
+const Execute = require("./Execute").Execute;
+const clientConfig  = require("./clientConfig.json");
 
-D365.DefaultNodeExecution();
+Execute(clientConfig.resource);
