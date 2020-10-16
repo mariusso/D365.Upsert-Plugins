@@ -1,10 +1,11 @@
 {
-  "name": "d365.nodeapp",
+  "name": "d365.upsertplugins",
   "version": "1.0.0",
-  "description": "A \"Console Application\" in NodeJS for D365",
-  "main": "entrypoint.js",
+  "description": "",
+  "main": "Execute.js",
   "scripts": {
-    "start": "node EntryPoint.js"
+    "RegisterPlugins": "node Execute.js RegisterPlugins",
+    "CreateConfigFromD365": "node Execute.js CreateConfigFromD365"
   },
   "author": "Marius Solend",
   "license": "ISC",
