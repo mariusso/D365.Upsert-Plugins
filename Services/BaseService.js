@@ -2,11 +2,10 @@
 
 const url = require("url");
 const superagent = require("superagent");
-const { webApiurl } = require("../clientConfig.json");
 
 exports.BaseService = class BaseService {
 
-    constructor(tokenResponse, entitySetName) {
+    constructor(tokenResponse, clientConfig, entitySetName) {
 
         this.RequestHeaders = {
             "Authorization": "Bearer " + tokenResponse.accessToken,
@@ -18,7 +17,7 @@ exports.BaseService = class BaseService {
             "Prefer": "return=representation,odata.include-annotations=\"*\""
         };
 
-        this.WebApiUrl = webApiurl;
+        this.WebApiUrl = clientConfig.webApiUrl;
         this.EntitySetName = entitySetName;
     }
 

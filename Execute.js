@@ -4,7 +4,6 @@ const { AcquireTokenWithClientCredentials } = require("./AdalNode");
 const { BaseService } = require("./Services/BaseService");
 const pluginConfig = require("./pluginConfig.json");
 const fs = require('fs').promises;
-const clientConfig = require("./clientConfig.json");
 const path = require("path");
 
 let assemblyService;
@@ -17,206 +16,229 @@ let imageService;
 
 async function EntryPoint() {
 
-    const args = process.argv.slice(2);
+    try {
+        const args = process.argv.slice(2);
 
-    if (args.length < 1) {
-        RegisterPlugins();
-    }
-    else {
-
-        const command = args[0];
-
-        if (command === "RegisterPlugins") {
-            RegisterPlugins();
-        }
-        else if (command === "CreateConfigFromD365") {
-
-            if(args.length < 2) {
-                console.error("At least one assembly name is required.");
-                return;
+        if (args.length > 0) {
+    
+            const command = args[0];
+            let env = "DEV";
+    
+            if (args.length > 1) {
+                env = args[1];
+            }
+    
+            let clientConfig = null;
+    
+            if(env === "DEV") {
+                clientConfig = require("./clientConfigDEV.json")
+            }
+            else if(env === "TEST") {
+                clientConfig = require("./clientConfigTEST.json")
+            }
+            else if(env === "PROD") {
+                clientConfig = require("./clientConfigPROD.json")
+            }
+            else {
+                throw new Error("Unknown environment");
             }
 
-            const assemblyNames = args.slice(1);
-            CreateConfigFromD365(assemblyNames);
+            const tokenResponse = await AcquireTokenWithClientCredentials(clientConfig)
+    
+            if (command == "UpsertAssembly") {
+                RegisterFromConfig(tokenResponse, clientConfig, true);
+            }
+            else if (command === "RegisterFromConfig") {
+                RegisterFromConfig(tokenResponse, clientConfig, false);
+            }
+            else if (command === "CreateConfigFromD365") {
+    
+                if (args.length < 3) {
+                    throw new Error("At least one assembly name is required.");
+                }
+    
+                const assemblyNames = args.slice(2);
+                CreateConfigFromD365(tokenResponse, clientConfig, assemblyNames);
+            }
+            else {
+                throw new Error(`Unknown command: ${command}`);
+            }
         }
         else {
-            console.error(`Unknown command: ${command}`);
+            throw new Error("Command is required.");
         }
     }
+    catch(error) {
+        console.error(error.message)
+    } 
 }
 
-async function RegisterPlugins() {
+async function RegisterFromConfig(tokenResponse, clientConfig, assemblyOnly) {
 
-    try {
+    assemblyService = new BaseService(tokenResponse, clientConfig, "pluginassemblies");
+    pluginService = new BaseService(tokenResponse, clientConfig,  "plugintypes");
+    stepService = new BaseService(tokenResponse, clientConfig, "sdkmessageprocessingsteps");
+    sdkMessageService = new BaseService(tokenResponse, clientConfig, "sdkmessages");
+    sdkMessageFilterService = new BaseService(tokenResponse, clientConfig, "sdkmessagefilters");
+    secureConfigService = new BaseService(tokenResponse, clientConfig, "sdkmessageprocessingstepsecureconfigs");
+    imageService = new BaseService(tokenResponse, clientConfig, "sdkmessageprocessingstepimages");
 
-        const tokenResponse = await AcquireTokenWithClientCredentials();
+    for (const assembly of pluginConfig.Assemblies) {
 
-        assemblyService = new BaseService(tokenResponse, "pluginassemblies");
-        pluginService = new BaseService(tokenResponse, "plugintypes");
-        stepService = new BaseService(tokenResponse, "sdkmessageprocessingsteps");
-        sdkMessageService = new BaseService(tokenResponse, "sdkmessages");
-        sdkMessageFilterService = new BaseService(tokenResponse, "sdkmessagefilters");
-        secureConfigService = new BaseService(tokenResponse, "sdkmessageprocessingstepsecureconfigs");
-        imageService = new BaseService(tokenResponse, "sdkmessageprocessingstepimages");
+        assembly.Id = await UpsertAssembly(assembly);
 
-        for (const assembly of pluginConfig.Assemblies) {
+        if (assemblyOnly) {
+            continue;
+        }
 
-            assembly.Id = await UpsertAssembly(assembly);
+        for (const plugin of assembly.Plugins) {
 
-            for (const plugin of assembly.Plugins) {
+            plugin.Id = await UpsertPlugin(plugin, assembly.Id);
 
-                plugin.Id = await UpsertPlugin(plugin, assembly.Id);
+            for (const step of plugin.Steps) {
 
-                for (const step of plugin.Steps) {
+                step.Id = await UpsertStep(step, plugin.name, plugin.Id);
 
-                    step.Id = await UpsertStep(step, plugin.name, plugin.Id);
+                if (step.secureconfiguration) {
+                    step.secureconfiguration.Id = await UpsertSecureConfig(step.secureconfiguration, step.Id);
+                }
 
-                    if (step.secureconfiguration) {
-                        step.secureconfiguration.Id = await UpsertSecureConfig(step.secureconfiguration, step.Id);
-                    }
+                for (const image of step.Images) {
 
-                    for (const image of step.Images) {
-
-                        image.Id = await UpsertImage(image, step.Id);
-                    }
+                    image.Id = await UpsertImage(image, step.Id);
                 }
             }
         }
-
-        var pluginConfigJson = JSON.stringify(pluginConfig);
-
-        fs.writeFile("./pluginConfig.json", pluginConfigJson);
-
-        console.info("Plugin Registration - Done.");
     }
-    catch (error) {
-        console.error(error.message);
-    }
+
+    var pluginConfigJson = JSON.stringify(pluginConfig);
+
+    fs.writeFile("./pluginConfig.json", pluginConfigJson);
+
+    console.info("Plugin Registration - Done.");
 }
 
-async function CreateConfigFromD365(assemblyNames) {
+async function CreateConfigFromD365(tokenResponse, clientConfig, assemblyNames) {
 
-    try {
-        const tokenResponse = await AcquireTokenWithClientCredentials();
+    assemblyService = new BaseService(tokenResponse, clientConfig, "pluginassemblies");
+    pluginService = new BaseService(tokenResponse, clientConfig, "plugintypes");
+    stepService = new BaseService(tokenResponse, clientConfig, "sdkmessageprocessingsteps");
+    sdkMessageService = new BaseService(tokenResponse, clientConfig, "sdkmessages");
+    sdkMessageFilterService = new BaseService(tokenResponse, clientConfig, "sdkmessagefilters");
+    secureConfigService = new BaseService(tokenResponse, clientConfig, "sdkmessageprocessingstepsecureconfigs");
+    imageService = new BaseService(tokenResponse, clientConfig, "sdkmessageprocessingstepimages");
 
-        assemblyService = new BaseService(tokenResponse, "pluginassemblies");
-        pluginService = new BaseService(tokenResponse, "plugintypes");
-        stepService = new BaseService(tokenResponse, "sdkmessageprocessingsteps");
-        sdkMessageService = new BaseService(tokenResponse, "sdkmessages");
-        sdkMessageFilterService = new BaseService(tokenResponse, "sdkmessagefilters");
-        secureConfigService = new BaseService(tokenResponse, "sdkmessageprocessingstepsecureconfigs");
-        imageService = new BaseService(tokenResponse, "sdkmessageprocessingstepimages");
+    const config = {
+        Assemblies: []
+    };
 
-        const config = {
-            Assemblies: []
-        };
+    for (const assemblyName of assemblyNames) {
 
-        for (const assemblyName of assemblyNames) {
-            const assemblies = await assemblyService.RetrieveMultiple("", `name eq '${assemblyName}'`, "", "1");
+        console.debug("Reading assembly " + assemblyName + "...");
 
-            if (assemblies.length < 1) {
-                throw new Error(`Could not retrieve assembly with name: '${assemblyName}'.`);
-            }
+        const assemblies = await assemblyService.RetrieveMultiple("", `name eq '${assemblyName}'`, "", "1");
 
-            const assembly = assemblies[0];
+        if (assemblies.length < 1) {
+            throw new Error(`Could not retrieve assembly with name: '${assemblyName}'.`);
+        }
 
-            const assemblyConfig = {
-                Id: assembly.pluginassemblyid,
-                relativePath: "",
-                description: assembly.description,
-                version: assembly.version,
-                sourcetype: assembly.sourcetype,
-                isolationmode: assembly.isolationmode,
-                Plugins: []
-            }
+        const assembly = assemblies[0];
 
-            const plugins = await pluginService.RetrieveMultiple("", `_pluginassemblyid_value eq '${assembly.pluginassemblyid}'`);
+        const assemblyConfig = {
+            Id: assembly.pluginassemblyid,
+            relativePath: "",
+            description: assembly.description,
+            version: assembly.version,
+            sourcetype: assembly.sourcetype,
+            isolationmode: assembly.isolationmode,
+            Plugins: []
+        }
 
-            for (const plugin of plugins) {
+        const plugins = await pluginService.RetrieveMultiple("", `_pluginassemblyid_value eq '${assembly.pluginassemblyid}'`);
 
-                const pluginConfig = {
-                    Id: plugin.plugintypeid,
-                    typename: plugin.typename,
-                    name: plugin.name,
-                    friendlyname: plugin.friendlyname,
-                    description: plugin.description,
-                    Steps: []
+        for (const plugin of plugins) {
+
+            console.debug("Reading plugin " + plugin.friendlyname + "...");
+
+            const pluginConfig = {
+                Id: plugin.plugintypeid,
+                typename: plugin.typename,
+                name: plugin.name,
+                friendlyname: plugin.friendlyname,
+                description: plugin.description,
+                Steps: []
+            };
+
+            const steps = await stepService.RetrieveMultiple("", `_plugintypeid_value eq '${plugin.plugintypeid}'`);
+
+            for (const step of steps) {
+
+                const stepConfig = {
+                    Id: step.sdkmessageprocessingstepid,
+                    name: step.name,
+                    message: "",
+                    entity: "",
+                    filteringattributes: step.filteringattributes,
+                    mode: step.mode,
+                    stage: step.stage,
+                    rank: step.rank,
+                    supporteddeployment: step.supporteddeployment,
+                    asyncautodelete: step.asyncautodelete,
+                    configuration: step.configuration,
+                    secureconfiguration: null,
+                    Images: []
                 };
 
-                const steps = await stepService.RetrieveMultiple("", `_plugintypeid_value eq '${plugin.plugintypeid}'`);
-
-                for (const step of steps) {
-
-                    const stepConfig = {
-                        Id: step.sdkmessageprocessingstepid,
-                        name: step.name,
-                        message: "",
-                        entity: "",
-                        filteringattributes: step.filteringattributes,
-                        mode: step.mode,
-                        stage: step.stage,
-                        rank: step.rank,
-                        supporteddeployment: step.supporteddeployment,
-                        asyncautodelete: step.asyncautodelete,
-                        configuration: step.configuration,
-                        secureconfiguration: null,
-                        Images: []
-                    };
-
-                    if (step._sdkmessageid_value) {
-                        stepConfig.message = step["_sdkmessageid_value@OData.Community.Display.V1.FormattedValue"];
-                    }
-
-                    if (step._sdkmessagefilterid_value) {
-                        const sdkMessageFilter = await sdkMessageFilterService.Retrieve(step._sdkmessagefilterid_value, "primaryobjecttypecode");
-                        stepConfig.entity = sdkMessageFilter.primaryobjecttypecode;
-                    }
-
-                    if (step._sdkmessageprocessingstepsecureconfigid_value) {
-                        const secureConfig = await secureConfigService.Retrieve(step._sdkmessageprocessingstepsecureconfigid_value, "sdkmessageprocessingstepsecureconfigid,secureconfig");
-                        stepConfig.secureconfiguration = {
-                            Id: secureConfig.sdkmessageprocessingstepsecureconfigid,
-                            secureconfig: secureConfig.secureconfig
-                        };
-                    }
-
-                    const images = await imageService.RetrieveMultiple("", `_sdkmessageprocessingstepid_value eq ${step.sdkmessageprocessingstepid}`);
-
-                    for (const image of images) {
-                        
-                        const imageConfig = {
-                            Id: image.sdkmessageprocessingstepimageid,
-                            name: image.name,
-                            entityalias: image.entityalias,
-                            description: image.description,
-                            imagetype: image.imagetype,
-                            messagepropertyname: image.messagepropertyname,
-                            attributes: image.attributes
-                        }
-
-                        stepConfig.Images.push(imageConfig);
-                    }
-
-                    pluginConfig.Steps.push(stepConfig);
+                if (step._sdkmessageid_value) {
+                    stepConfig.message = step["_sdkmessageid_value@OData.Community.Display.V1.FormattedValue"];
                 }
 
-                assemblyConfig.Plugins.push(pluginConfig);
+                if (step._sdkmessagefilterid_value) {
+                    const sdkMessageFilter = await sdkMessageFilterService.Retrieve(step._sdkmessagefilterid_value, "primaryobjecttypecode");
+                    stepConfig.entity = sdkMessageFilter.primaryobjecttypecode;
+                }
+
+                if (step._sdkmessageprocessingstepsecureconfigid_value) {
+                    const secureConfig = await secureConfigService.Retrieve(step._sdkmessageprocessingstepsecureconfigid_value, "sdkmessageprocessingstepsecureconfigid,secureconfig");
+                    stepConfig.secureconfiguration = {
+                        Id: secureConfig.sdkmessageprocessingstepsecureconfigid,
+                        secureconfig: secureConfig.secureconfig
+                    };
+                }
+
+                const images = await imageService.RetrieveMultiple("", `_sdkmessageprocessingstepid_value eq ${step.sdkmessageprocessingstepid}`);
+
+                for (const image of images) {
+
+                    const imageConfig = {
+                        Id: image.sdkmessageprocessingstepimageid,
+                        name: image.name,
+                        entityalias: image.entityalias,
+                        description: image.description,
+                        imagetype: image.imagetype,
+                        messagepropertyname: image.messagepropertyname,
+                        attributes: image.attributes
+                    }
+
+                    stepConfig.Images.push(imageConfig);
+                }
+
+                pluginConfig.Steps.push(stepConfig);
             }
 
-            config.Assemblies.push(assemblyConfig);
+            assemblyConfig.Plugins.push(pluginConfig);
         }
 
-        console.info("Writing to file 'configFromD365.json'")
-
-        var configJson = JSON.stringify(config);
-
-        fs.writeFile("./configFromD365.json", configJson);
-
-        console.info("Create Config from D365 - Done.");
+        config.Assemblies.push(assemblyConfig);
     }
-    catch (error) {
-        console.error(error.message);
-    }
+
+    console.info("Writing to file 'configFromD365.json'")
+
+    var configJson = JSON.stringify(config);
+
+    fs.writeFile("./configFromD365.json", configJson);
+
+    console.info("Create Config from D365 - Done.");
 }
 
 async function UpsertAssembly(assembly) {

@@ -4,6 +4,7 @@
   "description": "A NodeJs script to get pugin configuration from D365 and update plugin configuration in D365",
   "main": "entrypoint.js",
   "scripts": {
+    "UpsertAssembly": "node Execute.js UpsertAssembly",
     "RegisterPlugins": "node Execute.js RegisterPlugins",
     "CreateConfigFromD365": "node Execute.js CreateConfigFromD365"
   },

@@ -2,4 +2,7 @@ node_modules/
 .vscode/
 
 clientConfig.json
+clientConfigDEV.json
+clientConfigTEST.json
+clientConfigPROD.json
 configFromD365.json
